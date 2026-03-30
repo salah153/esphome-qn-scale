@@ -1,6 +1,5 @@
 #include "qn_scale.h"
 #include "esphome/core/log.h"
-#include <cmath>
 #include <ctime>
 
 namespace esphome {
@@ -11,9 +10,6 @@ static const char *const TAG = "qn_scale";
 void QNScale::dump_config() {
   ESP_LOGCONFIG(TAG, "QN Scale:");
   ESP_LOGCONFIG(TAG, "  Min Weight: %.1f kg", min_weight_);
-  ESP_LOGCONFIG(TAG, "  Height: %.0f cm", height_cm_);
-  ESP_LOGCONFIG(TAG, "  Age: %d", age_);
-  ESP_LOGCONFIG(TAG, "  Gender: %s", is_male_ ? "male" : "female");
 }
 
 void QNScale::loop() {
@@ -101,103 +97,6 @@ void QNScale::send_stored_data_response_() {
   write_characteristic_(CHR_CFG_UUID, q22, sizeof(q22));
 }
 
-// Body composition formulas adapted from openScale
-// https://github.com/oliexdev/openScale
-void QNScale::publish_body_composition_(float weight, float impedance) {
-  float h = height_cm_;
-  float h_m = h / 100.0f;
-  float a = (float)age_;
-
-  // BMI
-  float bmi = weight / (h_m * h_m);
-  if (bmi_sensor_)
-    bmi_sensor_->publish_state(bmi);
-
-  // If no impedance data, only publish BMI
-  if (impedance <= 0.0f || impedance > 3000.0f) {
-    ESP_LOGW(TAG, "No valid impedance (%.0f), skipping body composition", impedance);
-    return;
-  }
-
-  if (impedance_sensor_)
-    impedance_sensor_->publish_state(impedance);
-
-  // Body fat % — clamp-based formula from openScale / Xiaomi
-  float body_fat;
-  if (is_male_) {
-    body_fat = (1.20f * bmi) + (0.23f * a) - 16.2f;
-    // Impedance-adjusted: higher impedance = more fat
-    float impedance_factor = (impedance - 400.0f) / 40.0f;
-    body_fat += impedance_factor;
-  } else {
-    body_fat = (1.20f * bmi) + (0.23f * a) - 5.4f;
-    float impedance_factor = (impedance - 350.0f) / 35.0f;
-    body_fat += impedance_factor;
-  }
-  // Clamp to reasonable range
-  if (body_fat < 3.0f) body_fat = 3.0f;
-  if (body_fat > 60.0f) body_fat = 60.0f;
-
-  if (body_fat_sensor_)
-    body_fat_sensor_->publish_state(body_fat);
-
-  ESP_LOGI(TAG, "Body fat: %.1f%%, BMI: %.1f, Impedance: %.0f", body_fat, bmi, impedance);
-
-  // Lean body mass
-  float fat_mass = weight * (body_fat / 100.0f);
-  float lean_mass = weight - fat_mass;
-
-  // Muscle mass — approximately 75% of lean mass
-  float muscle_mass = lean_mass * 0.75f;
-  if (muscle_mass_sensor_)
-    muscle_mass_sensor_->publish_state(muscle_mass);
-
-  // Body water % — lean tissue is ~73% water
-  float water_pct = (lean_mass * 0.73f / weight) * 100.0f;
-  if (water_pct < 35.0f) water_pct = 35.0f;
-  if (water_pct > 75.0f) water_pct = 75.0f;
-  if (water_pct_sensor_)
-    water_pct_sensor_->publish_state(water_pct);
-
-  // Bone mass — estimated from height and lean mass
-  float bone_mass;
-  if (is_male_) {
-    bone_mass = 0.18016f * (h_m * h_m) * (lean_mass / weight) * 100.0f;
-    bone_mass = bone_mass * 0.05f; // Scale to kg
-    if (bone_mass < 2.0f) bone_mass = 2.5f;
-    if (bone_mass > 5.0f) bone_mass = 4.5f;
-  } else {
-    bone_mass = 0.245691014f * (h_m * h_m) * (lean_mass / weight) * 100.0f;
-    bone_mass = bone_mass * 0.04f;
-    if (bone_mass < 1.5f) bone_mass = 2.0f;
-    if (bone_mass > 4.0f) bone_mass = 3.5f;
-  }
-  if (bone_mass_sensor_)
-    bone_mass_sensor_->publish_state(bone_mass);
-
-  // BMR — Mifflin-St Jeor equation
-  float bmr;
-  if (is_male_) {
-    bmr = (10.0f * weight) + (6.25f * h) - (5.0f * a) + 5.0f;
-  } else {
-    bmr = (10.0f * weight) + (6.25f * h) - (5.0f * a) - 161.0f;
-  }
-  if (bmr_sensor_)
-    bmr_sensor_->publish_state(bmr);
-
-  // Visceral fat — rough estimation from BMI, age, gender
-  float visceral;
-  if (is_male_) {
-    visceral = (bmi - 10.0f) * 0.5f + (a - 20.0f) * 0.1f;
-  } else {
-    visceral = (bmi - 10.0f) * 0.4f + (a - 20.0f) * 0.07f;
-  }
-  if (visceral < 1.0f) visceral = 1.0f;
-  if (visceral > 30.0f) visceral = 30.0f;
-  if (visceral_fat_sensor_)
-    visceral_fat_sensor_->publish_state(visceral);
-}
-
 void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_t length) {
   if (length < 3)
     return;
@@ -245,9 +144,6 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
     if (weight >= 250.0f)
       weight /= 10.0f;
 
-    // Use R1 as primary impedance (ohms)
-    float impedance = (float)r1;
-
     if (!reading_active_) {
       reading_active_ = true;
       if (active_sensor_)
@@ -256,22 +152,14 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
     last_reading_time_ = millis();
 
     if (stable && weight >= min_weight_) {
-      ESP_LOGI(TAG, "Stable weight: %.2f kg (%.1f lbs), R1=%u R2=%u",
-               weight, weight * 2.20462f, r1, r2);
+      ESP_LOGI(TAG, "Stable: %.2f kg, R1=%u, R2=%u", weight, r1, r2);
 
       if (weight_sensor_)
         weight_sensor_->publish_state(weight);
-      if (weight_lbs_sensor_)
-        weight_lbs_sensor_->publish_state(weight * 2.20462f);
-      if (last_reading_sensor_) {
-        auto now = time(nullptr);
-        char buf[32];
-        strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", localtime(&now));
-        last_reading_sensor_->publish_state(buf);
-      }
-
-      // Calculate and publish body composition
-      publish_body_composition_(weight, impedance);
+      if (impedance_r1_sensor_)
+        impedance_r1_sensor_->publish_state((float)r1);
+      if (impedance_r2_sensor_)
+        impedance_r2_sensor_->publish_state((float)r2);
 
       reading_active_ = false;
       if (active_sensor_)
