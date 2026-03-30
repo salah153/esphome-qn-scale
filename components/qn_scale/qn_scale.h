@@ -10,8 +10,6 @@ namespace esphome {
 namespace qn_scale {
 
 // QN-Scale BLE Protocol UUIDs (service 0xFFE0)
-static const esp_bt_uuid_t QN_SERVICE_UUID = {
-    .len = ESP_UUID_LEN_16, .uuid = {.uuid16 = 0xFFE0}};
 static const uint16_t CHR_NOTIFY_UUID = 0xFFE1;
 static const uint16_t CHR_MISC_UUID = 0xFFE2;
 static const uint16_t CHR_CFG_UUID = 0xFFE3;

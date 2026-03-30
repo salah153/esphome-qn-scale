@@ -197,11 +197,11 @@ void QNScale::gattc_event_handler(esp_gattc_cb_event_t event,
     }
 
     case ESP_GATTC_SEARCH_CMPL_EVT: {
-      // Find all characteristic handles
-      auto *chr_notify = this->parent()->get_characteristic(QN_SERVICE_UUID, CHR_NOTIFY_UUID);
-      auto *chr_misc = this->parent()->get_characteristic(QN_SERVICE_UUID, CHR_MISC_UUID);
-      auto *chr_cfg = this->parent()->get_characteristic(QN_SERVICE_UUID, CHR_CFG_UUID);
-      auto *chr_time = this->parent()->get_characteristic(QN_SERVICE_UUID, CHR_TIME_UUID);
+      // Find all characteristic handles using uint16_t overload
+      auto *chr_notify = this->parent()->get_characteristic(0xFFE0, CHR_NOTIFY_UUID);
+      auto *chr_misc = this->parent()->get_characteristic(0xFFE0, CHR_MISC_UUID);
+      auto *chr_cfg = this->parent()->get_characteristic(0xFFE0, CHR_CFG_UUID);
+      auto *chr_time = this->parent()->get_characteristic(0xFFE0, CHR_TIME_UUID);
 
       if (chr_notify == nullptr) {
         ESP_LOGW(TAG, "FFE1 (notify) characteristic not found");
