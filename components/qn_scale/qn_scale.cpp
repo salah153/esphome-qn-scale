@@ -113,6 +113,11 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
     else
       scale_factor_ = 10.0f;
 
+    char hex[length * 3 + 1];
+    for (uint16_t i = 0; i < length; i++)
+      sprintf(hex + i * 3, "%02X ", data[i]);
+    hex[length * 3] = '\0';
+    ESP_LOGI(TAG, "Scale info raw (%u bytes): %s", length, hex);
     ESP_LOGI(TAG, "Scale info received (factor: %.0f)", scale_factor_);
     send_config_();
 
@@ -176,6 +181,13 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
 
   } else if (opcode == 0x21) {
     send_stored_data_response_();
+  } else {
+    // Unknown opcode — dump raw bytes for reverse engineering
+    char hex[length * 3 + 1];
+    for (uint16_t i = 0; i < length; i++)
+      sprintf(hex + i * 3, "%02X ", data[i]);
+    hex[length * 3] = '\0';
+    ESP_LOGI(TAG, "Unknown opcode 0x%02X (%u bytes): %s", opcode, length, hex);
   }
 }
 
