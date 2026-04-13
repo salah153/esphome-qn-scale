@@ -17,6 +17,7 @@ void QNScale::loop() {
     reading_active_ = false;
     if (active_sensor_)
       active_sensor_->publish_state(false);
+    this->parent()->disconnect();  // Timeout: release scale so it can sleep
   }
 }
 
@@ -112,6 +113,11 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
     else
       scale_factor_ = 10.0f;
 
+    char hex12[length * 3 + 1];
+    for (uint16_t i = 0; i < length; i++)
+      sprintf(hex12 + i * 3, "%02X ", data[i]);
+    hex12[length * 3] = '\0';
+    ESP_LOGI(TAG, "Scale info raw (%u bytes): %s", length, hex12);
     ESP_LOGI(TAG, "Scale info received (factor: %.0f)", scale_factor_);
     send_config_();
 
@@ -164,6 +170,7 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
       reading_active_ = false;
       if (active_sensor_)
         active_sensor_->publish_state(false);
+      this->parent()->disconnect();  // Release scale so it can sleep
 
     } else if (!stable) {
       ESP_LOGD(TAG, "Measuring: %.2f kg (R1=%u R2=%u)", weight, r1, r2);
@@ -174,6 +181,12 @@ void QNScale::handle_notification_(uint16_t handle, const uint8_t *data, uint16_
 
   } else if (opcode == 0x21) {
     send_stored_data_response_();
+  } else {
+    char hexunk[length * 3 + 1];
+    for (uint16_t i = 0; i < length; i++)
+      sprintf(hexunk + i * 3, "%02X ", data[i]);
+    hexunk[length * 3] = '\0';
+    ESP_LOGI(TAG, "Unknown opcode 0x%02X (%u bytes): %s", opcode, length, hexunk);
   }
 }
 
