@@ -13,11 +13,22 @@ void QNScale::dump_config() {
 }
 
 void QNScale::loop() {
+  // Mid-measurement stall: weight frames started but stopped coming.
   if (reading_active_ && (millis() - last_reading_time_ > 60000)) {
     reading_active_ = false;
     if (active_sensor_)
       active_sensor_->publish_state(false);
-    this->parent()->disconnect();  // Timeout: release scale so it can sleep
+    this->parent()->disconnect();
+    return;
+  }
+
+  // Idle-connection watchdog: connected but never saw any weight frames
+  // (e.g. scale advertised post-weigh and we reconnected for nothing).
+  // Drop the link so the scale's auto-sleep can fire.
+  if (connect_time_ != 0 && !reading_active_ &&
+      (millis() - connect_time_ > 30000)) {
+    ESP_LOGI(TAG, "Idle connection — disconnecting to let scale sleep");
+    this->parent()->disconnect();
   }
 }
 
@@ -192,8 +203,14 @@ void QNScale::gattc_event_handler(esp_gattc_cb_event_t event,
       cfg_handle_ = 0;
       time_handle_ = 0;
       reading_active_ = false;
+      connect_time_ = 0;
       if (active_sensor_)
         active_sensor_->publish_state(false);
+      break;
+    }
+
+    case ESP_GATTC_OPEN_EVT: {
+      connect_time_ = millis();
       break;
     }
 

@@ -58,6 +58,7 @@ class QNScale : public ble_client::BLEClientNode, public Component {
   float min_weight_{20.0f};
 
   uint32_t last_reading_time_{0};
+  uint32_t connect_time_{0};
 };
 
 }  // namespace qn_scale
